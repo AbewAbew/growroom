@@ -18,7 +18,9 @@ const {
   dewpointF,
   moldRisk,
   dryBackInfo,
-  ripenessInfo
+  ripenessInfo,
+  flipPlan,
+  stretchFraction
 } = window.AppAlerts;
 const { playbookFor, playbookStageKey } = window.AppPlaybook;
 const { escapeHtml, normalizeStage, options, prettyDate, todayInputValue, tempUnitLabel, tempToDisplay, tempDeltaToDisplay, fmtTemp } = window.AppUtils;
@@ -1668,6 +1670,8 @@ function createRenderer(stateRef) {
 
           ${renderTrendsPanel(room, setpoint, stageKey)}
 
+          ${renderFlipPlanner(room, stageKey)}
+
           ${trainingPanel}
 
           ${suggestions.length ? `<div class="panel"><div class="panel-head"><h4>Recommendations</h4></div><ul class="rec-list">${suggestions.map((t) => `<li>${escapeHtml(t)}</li>`).join("")}</ul></div>` : ""}
@@ -1675,6 +1679,49 @@ function createRenderer(stateRef) {
           ${logRailHtml}
         </div>
       </div>`;
+  }
+
+  // Suggests when to flip to flower so the post-flip stretch fits the tent.
+  function renderFlipPlanner(room, stageKey) {
+    if (!["seedling", "propagation", "vegetative"].includes(stageKey)) return "";
+    if (!reading(room.heightM)) return "";
+    const latestHealth = latestOfType(room.id, "health");
+    const curIn = latestHealth ? reading(latestHealth.heightIn) : NaN;
+    const curCm = Number.isFinite(curIn) ? curIn * 2.54 : NaN;
+    const plan = flipPlan(room, curCm);
+    if (!plan) return "";
+    const fmtCm = (cm) => formatSmallLength(cm / 2.54); // formatSmallLength takes inches
+    const sfPct = Math.round(plan.sf * 100);
+    const trainLabel = { none: "no training", scrog: "ScrOG", lst: "LST/topping" }[room.training || "none"] || "no training";
+    let chip = "";
+    let chipText = "keep vegging";
+    let msg = "";
+    if (plan.level === "nodata") {
+      chip = "warn"; chipText = "log height";
+      msg = `Log a plant height in the Plant-health station to get flip timing. With ~${fmtCm(plan.usableCm)} of usable height at ${sfPct}% stretch, the recommended flip height is about ${fmtCm(plan.flipHeightCm)}.`;
+    } else if (plan.level === "late") {
+      chip = "bad"; chipText = "flip overdue";
+      msg = `At ${sfPct}% stretch, ${fmtCm(plan.currentCm)} would finish ~${fmtCm(plan.projectedFinalCm)} — over your ~${fmtCm(plan.usableCm)} usable height. Flip ASAP, or super-crop / train hard to hold it off the lamp.`;
+    } else if (plan.level === "flip") {
+      chip = "ok"; chipText = "flip now";
+      msg = `Flip now — at ${sfPct}% stretch, ${fmtCm(plan.currentCm)} should finish ~${fmtCm(plan.projectedFinalCm)}, filling your ~${fmtCm(plan.usableCm)} usable height.`;
+    } else if (plan.level === "soon") {
+      chip = "warn"; chipText = "almost";
+      msg = `Almost — flip around ${fmtCm(plan.flipHeightCm)} (${fmtCm(plan.flipHeightCm - plan.currentCm)} to go). Now ${fmtCm(plan.currentCm)}.`;
+    } else {
+      msg = `Keep vegging — flip around ${fmtCm(plan.flipHeightCm)} (${fmtCm(plan.flipHeightCm - plan.currentCm)} to go). Now ${fmtCm(plan.currentCm)}.`;
+    }
+    const rows = [
+      ["Usable height", fmtCm(plan.usableCm), "tent − pot − lamp gap"],
+      ["Flip at", fmtCm(plan.flipHeightCm), `${sfPct}% stretch · ${trainLabel}`],
+      ["Plant now", Number.isFinite(plan.currentCm) ? fmtCm(plan.currentCm) : "—", "latest logged height"],
+      ["Projected final", Number.isFinite(plan.projectedFinalCm) ? fmtCm(plan.projectedFinalCm) : "—", "after the flower stretch"]
+    ];
+    return `<div class="panel">
+      <div class="panel-head"><h4>Flip planner</h4><span class="chip ${chip}">${escapeHtml(chipText)}</span></div>
+      <table class="data-table"><tbody>${rows.map((r) => `<tr><td>${escapeHtml(r[0])}</td><td class="now">${escapeHtml(r[1])}</td><td class="muted small">${escapeHtml(r[2])}</td></tr>`).join("")}</tbody></table>
+      <p class="muted small">${escapeHtml(msg)}${room.training === "scrog" ? " With a ScrOG, also flip when the screen is ~60-80% filled — the net spreads the stretch sideways." : ""}</p>
+    </div>`;
   }
 
   function renderTrainingGuidance(stageKey, timing) {
@@ -2448,6 +2495,12 @@ function createRenderer(stateRef) {
           <div class="form-row"><label>Warm lights<input name="warmLightCount" type="number" value="${v("warmLightCount", "0")}" /></label><label>Warm Kelvin<input name="warmLightKelvin" type="number" value="${v("warmLightKelvin", "3000")}" /></label></div>
           <div class="form-row"><label>Cool lights<input name="coolLightCount" type="number" value="${v("coolLightCount", "0")}" /></label><label>Cool Kelvin<input name="coolLightKelvin" type="number" value="${v("coolLightKelvin", "5000")}" /></label></div>
           <div id="lightWattsWrap">${lightWattsGridInner(room?.warmLightCount, room?.coolLightCount, room?.lightWatts, room?.lightWattsEach)}</div>
+          <div class="form-row"><label>Training<select name="training">
+            <option value="none"${(room?.training || "none") === "none" ? " selected" : ""}>None</option>
+            <option value="scrog"${room?.training === "scrog" ? " selected" : ""}>ScrOG (screen)</option>
+            <option value="lst"${room?.training === "lst" ? " selected" : ""}>LST / topping</option>
+          </select></label><label>Expected stretch %${helpHtml("stretch")}<input name="stretchPct" type="number" step="any" value="${v("stretchPct")}" placeholder="100" /></label></div>
+          <div class="form-row"><span class="form-hint">The Flip planner uses these: how much taller the plant gets after flipping to flower (≈100% ≈ doubles; lower if you ScrOG/train). Blank uses the training default — None 100%, ScrOG 50%, LST 70%.</span></div>
           <div class="form-row"><span class="form-hint">Measured pot width/height draws the buckets at exact scale (volume alone estimates bucket-shaped dims). Plant size comes from the height you log in Plant health. The lamp isn't set here — it auto-follows the stage's PPFD target in the room view (drag it to override).</span></div>
           <div class="modal-actions">
             ${room?.id ? `<button class="ghost-button danger" data-delete-room="${room.id}" type="button">Delete room</button>` : ""}

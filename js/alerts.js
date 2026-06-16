@@ -571,6 +571,52 @@ function ripenessInfo(batchId, logs) {
   return { latest, amber, cloudy, clear, phase, advice, window, count: entries.length };
 }
 
+// --- flip-to-flower height planner ------------------------------------------
+// Photoperiod plants gain ~50-100% height in the first weeks of 12/12 ("the
+// stretch"). Flip while the plant still has room to roughly double (or less,
+// if trained) without the canopy hitting the lamp. The usable vertical budget
+// is the tent height minus the pot, the light-to-canopy gap, and fixture/strap
+// clearance; the recommended flip height is that budget ÷ (1 + stretch).
+const FLOWER_LAMP_GAP_CM = 38; // ~15 in LED hang gap above the canopy
+const FIXTURE_CLEARANCE_CM = 10; // fixture body + straps near the ceiling
+const TRAINING_STRETCH_PCT = { none: 100, scrog: 50, lst: 70 };
+
+function stretchFraction(room) {
+  const explicit = number(room.stretchPct, NaN);
+  if (Number.isFinite(explicit) && explicit > 0) return explicit / 100;
+  return (TRAINING_STRETCH_PCT[room.training] != null ? TRAINING_STRETCH_PCT[room.training] : 100) / 100;
+}
+
+function potHeightCm(room) {
+  const inches = number(room.potHeightIn, NaN);
+  if (Number.isFinite(inches) && inches > 0) return inches * 2.54;
+  const liters = number(room.potLiters, NaN);
+  if (Number.isFinite(liters) && liters > 0) return Math.cbrt(liters * 1000); // ~cube assumption: 20 L ≈ 27 cm
+  return 25;
+}
+
+// currentHeightCm = latest logged plant height (soil line up), in cm.
+function flipPlan(room, currentHeightCm) {
+  const tentCm = number(room.heightM) * 100;
+  if (!tentCm) return null;
+  const potCm = potHeightCm(room);
+  const usableCm = Math.max(10, tentCm - potCm - FLOWER_LAMP_GAP_CM - FIXTURE_CLEARANCE_CM);
+  const sf = stretchFraction(room);
+  const flipHeightCm = usableCm / (1 + sf);
+  const cur = Number(currentHeightCm);
+  const hasCur = Number.isFinite(cur) && cur > 0;
+  const projectedFinalCm = hasCur ? cur * (1 + sf) : NaN;
+  let level;
+  if (!hasCur) level = "nodata";
+  // "overdue" only once the projected canopy would overshoot the usable height
+  // by more than ~10% — a small overshoot is still a fine "flip now".
+  else if (cur >= flipHeightCm && projectedFinalCm > usableCm * 1.1) level = "late";
+  else if (cur >= flipHeightCm) level = "flip";
+  else if (cur >= flipHeightCm * 0.85) level = "soon";
+  else level = "veg";
+  return { tentCm, potCm, usableCm, sf, flipHeightCm, currentCm: hasCur ? cur : NaN, projectedFinalCm, level };
+}
+
 function stageHistory(batch) {
   if (!batch) return [];
   const fallback = [{ stage: batch.stage || "Seedling", startDate: batch.startDate }];
@@ -727,6 +773,22 @@ function collectAlerts(state) {
     const setpoint = state.settings.setpoints[normalizeStage(room.stage)];
     const profile = equipmentProfile(room, setpoint);
     const lights = effectiveLights(room);
+
+    // Flip-to-flower height advisory (veg/seedling only).
+    const stageKeyRoom = normalizeStage(room.stage);
+    if (stageKeyRoom === "vegetative" || stageKeyRoom === "seedling") {
+      const lh = [...state.logs].reverse().find((log) => log.roomId === room.id && log.type === "health");
+      const curCm = lh && Number.isFinite(Number(lh.heightIn)) ? Number(lh.heightIn) * 2.54 : NaN;
+      if (Number.isFinite(curCm) && number(room.heightM)) {
+        const plan = flipPlan(room, curCm);
+        if (plan && (plan.level === "flip" || plan.level === "late")) {
+          alerts.push({
+            title: `${room.name}: ${plan.level === "late" ? "flip overdue — height risk" : "ready to flip to flower"}`,
+            detail: `Plant ~${Math.round(curCm)} cm. At ${Math.round(plan.sf * 100)}% stretch it finishes ~${Math.round(plan.projectedFinalCm)} cm vs ~${Math.round(plan.usableCm)} cm of usable height. ${plan.level === "late" ? "Flip ASAP, or train/super-crop hard to keep it off the lamp." : "Good time to switch to 12/12."}`
+          });
+        }
+      }
+    }
 
     if (!latestEnv) {
       alerts.push({ title: `${room.name}: missing environment reading`, detail: "No current temperature, humidity, or CO2 entry exists for this room." });
@@ -886,6 +948,8 @@ window.AppAlerts = {
   dewpointF,
   moldRisk,
   dryBackInfo,
-  ripenessInfo
+  ripenessInfo,
+  flipPlan,
+  stretchFraction
 };
 })();
