@@ -155,19 +155,48 @@ const PLANT_PALETTES = {
   seedling: { leaf: "#8fd89b", leafDark: "#5cae6c", stem: "#6cae5c" },
   propagation: { leaf: "#79c98a", leafDark: "#4f9d5c", stem: "#5fa055" },
   vegetative: { leaf: "#54b365", leafDark: "#347a40", stem: "#4d8a3d" },
-  flower: { leaf: "#4f9d57", leafDark: "#2f6a3a", stem: "#4a7a3a", bud: "#bcd98c", budTip: "#caa6d6" },
+  flower: { leaf: "#4f9d57", leafDark: "#2f6a3a", stem: "#4a7a3a", bud: "#bcd98c", budTip: "#caa6d6", pistil: "#e6a463" },
   drying: { leaf: "#a08a52", leafDark: "#6f6038", stem: "#6b5a33" }
 };
 
-function fanLeafGroup(stage, leaf, leafDark) {
-  const blades = [-64, -42, -21, 0, 21, 42, 64];
-  return blades
-    .map((a) => {
-      const rel = 1 - (Math.abs(a) / 90) * 0.55;
-      const L = 26 * rel;
-      const W = 3.2 * rel + 1.2;
-      const color = Math.abs(a) >= 60 ? `url(#${stage}-leafDarkGrad)` : `url(#${stage}-leafGrad)`;
-      return `<path d="M0 0 C ${-W} ${-L * 0.42}, ${-W * 0.5} ${-L * 0.82}, 0 ${-L} C ${W * 0.5} ${-L * 0.82}, ${W} ${-L * 0.42}, 0 0 Z" transform="rotate(${a})" fill="${color}"/>`;
+// A single serrated cannabis leaflet, tip at (0,-L), base at (0,0). Lanceolate
+// (widest ~⅓ up, tapering to a point) with saw-tooth margins built from
+// alternating notch/tooth points up the left edge and back down the right.
+function serratedLeafletPath(L, W) {
+  const n = 6; // teeth per side
+  const hw = (t) => {
+    const peak = 0.3;
+    const b = t <= peak ? t / peak : 1 - (t - peak) / (1 - peak);
+    return W * Math.max(0.04, b);
+  };
+  const pts = [[0, 0]];
+  for (let i = 1; i <= n; i += 1) {
+    const tn = (i - 0.5) / n;
+    pts.push([-hw(tn) * 0.58, -L * tn]); // notch in
+    pts.push([-hw(i / n), -L * (i / n)]); // tooth out
+  }
+  pts.push([0, -L]); // tip
+  for (let i = n; i >= 1; i -= 1) {
+    const tn = (i - 0.5) / n;
+    pts.push([hw(i / n), -L * (i / n)]); // tooth out
+    pts.push([hw(tn) * 0.58, -L * tn]); // notch in
+  }
+  pts.push([0, 0]);
+  return "M" + pts.map((q) => `${q[0].toFixed(2)} ${q[1].toFixed(2)}`).join(" L ") + " Z";
+}
+
+// The iconic 7-leaflet cannabis fan leaf: a long central leaflet flanked by
+// progressively shorter, angled pairs, each with a pale central vein.
+function fanLeafGroup(stage) {
+  const spec = [[0, 1], [24, 0.88], [-24, 0.88], [50, 0.66], [-50, 0.66], [80, 0.42], [-80, 0.42]];
+  return spec
+    .map(([a, f]) => {
+      const L = 27 * f;
+      const W = 5 * f + 0.6;
+      const grad = Math.abs(a) >= 50 ? `url(#${stage}-leafDarkGrad)` : `url(#${stage}-leafGrad)`;
+      const d = serratedLeafletPath(L, W);
+      const vein = `<line x1="0" y1="-0.5" x2="0" y2="${(-L * 0.9).toFixed(1)}" stroke="rgba(235,255,238,0.16)" stroke-width="0.4"/>`;
+      return `<g transform="rotate(${a})"><path d="${d}" fill="${grad}" stroke="rgba(18,38,22,0.5)" stroke-width="0.35" stroke-linejoin="round"/>${vein}</g>`;
     })
     .join("");
 }
@@ -213,19 +242,29 @@ function trainedVegPlant(stage, p) {
   return trainedBranches(stage) + leaves;
 }
 
+// A cola: a stack of bud clusters (overlapping calyxes) tapering to a tip. In
+// flower each cluster also gets curling pistil hairs and a dusting of frost.
 function cola(stage, x, baseY, len, scale, p) {
   let s = "";
-  const n = Math.max(3, Math.round(len / 6));
+  const pistil = (p && p.pistil) || "#e6a463";
+  const n = Math.max(4, Math.round(len / 5));
   for (let i = 0; i < n; i++) {
-    const cy = baseY - (i / n) * len;
-    const r = scale * (4.2 - (i / n) * 2.2);
-    s += `<ellipse cx="${(x + (i % 2 ? 1.2 : -1.2)).toFixed(1)}" cy="${cy.toFixed(1)}" rx="${r.toFixed(1)}" ry="${(r * 1.25).toFixed(1)}" fill="url(#${stage}-budGrad)"/>`;
+    const t = i / n;
+    const cy = baseY - t * len;
+    const r = scale * (4.4 - t * 2.4);
+    // two overlapping calyxes per node for a knobbly bud look
+    s += `<ellipse cx="${(x - r * 0.32).toFixed(1)}" cy="${cy.toFixed(1)}" rx="${(r * 0.82).toFixed(1)}" ry="${(r * 1.02).toFixed(1)}" fill="url(#${stage}-budGrad)"/>`;
+    s += `<ellipse cx="${(x + r * 0.32).toFixed(1)}" cy="${(cy - 0.8).toFixed(1)}" rx="${(r * 0.76).toFixed(1)}" ry="${(r * 0.96).toFixed(1)}" fill="url(#${stage}-budGrad)"/>`;
     if (stage === "flower") {
-      s += `<circle cx="${(x - r * 0.3 + ((i * 7) % r)).toFixed(1)}" cy="${(cy - r * 0.4 + ((i * 11) % r)).toFixed(1)}" r="0.65" fill="#ffffff" opacity="0.85" />`;
-      s += `<circle cx="${(x + r * 0.2 - ((i * 13) % r)).toFixed(1)}" cy="${(cy + r * 0.2 - ((i * 5) % r)).toFixed(1)}" r="0.5" fill="#e7faff" opacity="0.75" />`;
+      // pistil hairs curling out from the calyx
+      s += `<path d="M${x.toFixed(1)} ${cy.toFixed(1)} q ${(-r * 0.7).toFixed(1)} ${(-r * 0.55).toFixed(1)} ${(-r * 1).toFixed(1)} ${(-r * 0.25).toFixed(1)}" stroke="${pistil}" stroke-width="0.5" fill="none" opacity="0.85"/>`;
+      s += `<path d="M${x.toFixed(1)} ${cy.toFixed(1)} q ${(r * 0.7).toFixed(1)} ${(-r * 0.55).toFixed(1)} ${(r * 1).toFixed(1)} ${(-r * 0.25).toFixed(1)}" stroke="${pistil}" stroke-width="0.5" fill="none" opacity="0.85"/>`;
+      // frost (trichomes)
+      s += `<circle cx="${(x - r * 0.3).toFixed(1)}" cy="${(cy - r * 0.25).toFixed(1)}" r="0.5" fill="#ffffff" opacity="0.7"/>`;
+      s += `<circle cx="${(x + r * 0.25).toFixed(1)}" cy="${(cy + r * 0.15).toFixed(1)}" r="0.4" fill="#eafcff" opacity="0.6"/>`;
     }
   }
-  s += `<ellipse cx="${x}" cy="${(baseY - len).toFixed(1)}" rx="${(scale * 2).toFixed(1)}" ry="${(scale * 3).toFixed(1)}" fill="url(#${stage}-budGrad)"/>`;
+  s += `<ellipse cx="${x}" cy="${(baseY - len).toFixed(1)}" rx="${(scale * 2).toFixed(1)}" ry="${(scale * 3.2).toFixed(1)}" fill="url(#${stage}-budGrad)"/>`;
   return s;
 }
 
