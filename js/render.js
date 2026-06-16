@@ -159,6 +159,42 @@ const PLANT_PALETTES = {
   drying: { leaf: "#a08a52", leafDark: "#6f6038", stem: "#6b5a33" }
 };
 
+function lerpColor(a, b, t) {
+  const k = Math.max(0, Math.min(1, t));
+  const pa = parseInt(a.slice(1), 16);
+  const pb = parseInt(b.slice(1), 16);
+  const r = Math.round(((pa >> 16) & 255) + (((pb >> 16) & 255) - ((pa >> 16) & 255)) * k);
+  const g = Math.round(((pa >> 8) & 255) + (((pb >> 8) & 255) - ((pa >> 8) & 255)) * k);
+  const bl = Math.round((pa & 255) + ((pb & 255) - (pa & 255)) * k);
+  return "#" + ((1 << 24) | (r << 16) | (g << 8) | bl).toString(16).slice(1);
+}
+
+// Builds a plant palette tinted by what's been LOGGED, so the drawing reflects
+// the plant's real state: ripeness (trichome %) drives bud/pistil/frost color,
+// and a fade factor (late-flower senescence) yellows the leaves.
+//   style = { amber 0-1, cloudy 0-1, fade 0-1, scrog bool }
+function effectivePalette(stage, style) {
+  const base = { ...(PLANT_PALETTES[stage] || PLANT_PALETTES.vegetative) };
+  if (!style) return base;
+  const fade = Math.max(0, Math.min(1, style.fade || 0));
+  if (fade > 0) {
+    base.leaf = lerpColor(base.leaf, "#cdb24a", fade * 0.75);
+    base.leafDark = lerpColor(base.leafDark, "#8a6d2a", fade * 0.75);
+  }
+  if (stage === "flower") {
+    const amber = Math.max(0, Math.min(1, style.amber || 0));
+    const cloudy = Math.max(0, Math.min(1, style.cloudy || 0));
+    const ripe = Math.min(1, cloudy + amber);
+    base.bud = lerpColor(base.bud || "#bcd98c", "#d8c684", ripe * 0.6);
+    base.budTip = amber > 0.1 ? lerpColor("#caa6d6", "#caa05e", Math.min(1, amber * 1.4)) : base.budTip || "#caa6d6";
+    base.pistil = amber > 0.12
+      ? lerpColor("#e6a463", "#9a5526", Math.min(1, (amber - 0.12) / 0.6))
+      : lerpColor("#f0ece1", "#e6a463", cloudy);
+    base.frost = Math.min(0.95, 0.4 + cloudy * 0.45 + amber * 0.3);
+  }
+  return base;
+}
+
 // A single serrated cannabis leaflet, tip at (0,-L), base at (0,0). Lanceolate
 // (widest ~⅓ up, tapering to a point) with saw-tooth margins built from
 // alternating notch/tooth points up the left edge and back down the right.
@@ -259,9 +295,10 @@ function cola(stage, x, baseY, len, scale, p) {
       // pistil hairs curling out from the calyx
       s += `<path d="M${x.toFixed(1)} ${cy.toFixed(1)} q ${(-r * 0.7).toFixed(1)} ${(-r * 0.55).toFixed(1)} ${(-r * 1).toFixed(1)} ${(-r * 0.25).toFixed(1)}" stroke="${pistil}" stroke-width="0.5" fill="none" opacity="0.85"/>`;
       s += `<path d="M${x.toFixed(1)} ${cy.toFixed(1)} q ${(r * 0.7).toFixed(1)} ${(-r * 0.55).toFixed(1)} ${(r * 1).toFixed(1)} ${(-r * 0.25).toFixed(1)}" stroke="${pistil}" stroke-width="0.5" fill="none" opacity="0.85"/>`;
-      // frost (trichomes)
-      s += `<circle cx="${(x - r * 0.3).toFixed(1)}" cy="${(cy - r * 0.25).toFixed(1)}" r="0.5" fill="#ffffff" opacity="0.7"/>`;
-      s += `<circle cx="${(x + r * 0.25).toFixed(1)}" cy="${(cy + r * 0.15).toFixed(1)}" r="0.4" fill="#eafcff" opacity="0.6"/>`;
+      // frost (trichomes) — denser/brighter as the bud ripens (logged %)
+      const frost = (p && Number.isFinite(p.frost) ? p.frost : 0.7);
+      s += `<circle cx="${(x - r * 0.3).toFixed(1)}" cy="${(cy - r * 0.25).toFixed(1)}" r="0.5" fill="#ffffff" opacity="${frost.toFixed(2)}"/>`;
+      s += `<circle cx="${(x + r * 0.25).toFixed(1)}" cy="${(cy + r * 0.15).toFixed(1)}" r="0.4" fill="#eafcff" opacity="${(frost * 0.85).toFixed(2)}"/>`;
     }
   }
   s += `<ellipse cx="${x}" cy="${(baseY - len).toFixed(1)}" rx="${(scale * 2).toFixed(1)}" ry="${(scale * 3.2).toFixed(1)}" fill="url(#${stage}-budGrad)"/>`;
@@ -378,13 +415,15 @@ const CANOPY_WIDTH_FACTOR = { seedling: 0.5, propagation: 0.62, vegetative: 1.45
 // Plant + pot drawn in centimetre user units, returned as raw SVG body
 // content with its bounding box, so it can be embedded straight into the
 // full-scene SVG (or wrapped in a standalone <svg> by the helpers below).
-function plantBody(stage, plantHeightM, pot, maxWidthCm) {
-  const p = PLANT_PALETTES[stage] || PLANT_PALETTES.vegetative;
+function plantBody(stage, plantHeightM, pot, maxWidthCm, palette, fill) {
+  const p = palette || PLANT_PALETTES[stage] || PLANT_PALETTES.vegetative;
   const widthFactor = CANOPY_WIDTH_FACTOR[stage] ?? 0.7;
   const plantHcm = Math.max(2, plantHeightM * 100);
   const potWcm = pot.diameterM * 100;
   const potHcm = pot.heightM * 100;
   let plantWcm = Math.max(potWcm * 0.85, plantHcm * widthFactor);
+  // ScrOG: spread the canopy flat to (nearly) fill its share of the screen.
+  if (fill && Number.isFinite(maxWidthCm) && maxWidthCm > 0) plantWcm = Math.max(plantWcm, maxWidthCm);
   // Keep the canopy inside the tent: never let it exceed the space available
   // per plant (passed in from the scene). Without this a tall flower plant
   // (canopy ≈ 1.35× height) spills out the walls of a small tent.
@@ -500,7 +539,8 @@ function growSceneModel(room, lights, vstage, loggedHeight, setpoint, latestLigh
     ? Math.max(pot.heightM * 100 + 2, Math.min(zCanopy - 3, pot.heightM * 100 + 20.3))
     : null;
 
-  const palette = PLANT_PALETTES[vstage] || PLANT_PALETTES.vegetative;
+  const palette = effectivePalette(vstage, opts.plantStyle);
+  const scrogFill = !!(opts.plantStyle && opts.plantStyle.scrog);
   const selStation = opts.selStation || "";
   const roomId = room.id || "";
 
@@ -624,7 +664,7 @@ function growSceneModel(room, lights, vstage, loggedHeight, setpoint, latestLigh
       const x = plantX(i);
       const jitter = 1 + ((((i + offset) * 53) % 7) - 3) / 100;
       const ph = empty ? 0 : plantHM * jitter;
-      const { w, h, body } = empty ? potOnlyBody(vstage, pot) : plantBody(vstage, ph, pot, maxPlantWcm);
+      const { w, h, body } = empty ? potOnlyBody(vstage, pot) : plantBody(vstage, ph, pot, maxPlantWcm, palette, scrogFill);
       const sx = PX(x, yRow);
       const sy = PY(x, yRow, 0);
       spots.push({ x, yRow, sx, sy, potTopY: sy - pot.heightM * 100, potW: potWcm });
@@ -1573,8 +1613,22 @@ function createRenderer(stateRef) {
     const latestHealth = latestOfType(room.id, "health");
     const loggedHeight = latestHealth ? reading(latestHealth.heightIn) : NaN;
     const plantCount = effectivePlantCount(room);
+    // Plant styling driven by what's logged: ripeness (trichome %) tints the
+    // buds/pistils/frost, late-flower fade yellows the leaves, ScrOG flattens.
+    const ripeLog = latestOfType(room.id, "ripeness");
+    const amberFrac = ripeLog ? Math.max(0, (reading(ripeLog.amberPct) || 0) / 100) : 0;
+    const cloudyFrac = ripeLog ? Math.max(0, (reading(ripeLog.cloudyPct) || 0) / 100) : 0;
+    const styleBatch = state.batches.filter((b) => b.roomId === room.id && b.stage !== "Complete").sort((a, b) => new Date(b.startDate || 0) - new Date(a.startDate || 0))[0];
+    const styleWeek = stageKey === "flower" && styleBatch ? (batchTiming(styleBatch) || {}).week || 0 : 0;
+    const plantStyle = {
+      amber: amberFrac,
+      cloudy: cloudyFrac,
+      fade: stageKey === "flower" ? Math.min(0.7, amberFrac * 0.8 + (styleWeek >= 7 ? 0.3 : styleWeek >= 5 ? 0.12 : 0)) : 0,
+      scrog: room.training === "scrog"
+    };
     const scene = growSceneModel(room, lights, vstage, loggedHeight, setpoint, latestOfType(room.id, "light"), formatSmallLength, {
       selStation: stateRef.activeStation,
+      plantStyle,
       fanSpeed,
       hasFan: !!profile.fanCapacityCfm,
       stageLabel: room.stage || "",
