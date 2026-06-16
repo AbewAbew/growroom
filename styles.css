@@ -703,11 +703,15 @@ h4 {
 
 /* tent interior: highly detailed dark metallic Mylar grid background pattern */
 .room-viz.tent {
-  height: min(62vh, 540px);
-  width: 100%;
+  /* Size by height and let the inline aspect-ratio (the tent's real iso shape)
+     set the width, so a portrait tent no longer letterboxes with dark side
+     bars. Centered in its column; capped to the column width. */
+  height: min(72vh, 640px);
+  width: auto;
   max-width: 100%;
-  min-height: 360px;
-  margin: 0;
+  min-height: 380px;
+  margin: 0 auto;
+  justify-self: center;
   background: #070908;
   box-shadow: inset 0 0 50px rgba(0, 0, 0, 0.9);
   border-color: #16201b;
@@ -2613,9 +2617,11 @@ fieldset {
   }
 
   .room-viz.tent {
-    width: 100%;
+    width: auto;
+    max-width: 100%;
+    margin: 0 auto;
     min-height: 300px;
-    height: min(68vh, 480px);
+    height: min(68vh, 520px);
   }
 
   .viz-side .station-tabs,
@@ -2743,8 +2749,11 @@ fieldset {
   }
 
   .room-viz.tent {
+    width: auto;
+    max-width: 100%;
+    margin: 0 auto;
     min-height: 280px;
-    height: min(62vh, 420px);
+    height: min(62vh, 460px);
   }
 
   .tent-monitor {
