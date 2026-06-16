@@ -1,0 +1,65 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Grow Room Control</title>
+    <link rel="apple-touch-icon" sizes="180x180" href="apple-touch-icon.png" />
+    <link rel="icon" type="image/png" sizes="32x32" href="favicon-32x32.png" />
+    <link rel="icon" type="image/png" sizes="16x16" href="favicon-16x16.png" />
+    <link rel="manifest" href="site.webmanifest" />
+  <link rel="stylesheet" href="styles.css?v=60" />
+  </head>
+  <body>
+    <div class="app">
+      <header class="topbar">
+        <button class="brand" data-view="rooms" type="button">
+          <span class="brand-logo" aria-hidden="true"><img src="leaf.png?v=50" alt="" /></span>
+          <span class="brand-text">Grow<strong>Room</strong></span>
+        </button>
+        <nav class="topnav" id="topnav">
+          <button class="topnav-item active" data-view="rooms" type="button">Rooms</button>
+          <button class="topnav-item" data-view="batches" type="button">Batches</button>
+          <button class="topnav-item" data-view="plants" type="button">Plants</button>
+          <button class="topnav-item" data-view="tasks" type="button">Tasks</button>
+          <button class="topnav-item" data-view="harvest" type="button">Harvest</button>
+          <button class="topnav-item" data-view="diagnose" type="button">Diagnose</button>
+          <button class="topnav-item" data-view="inventory" type="button">Inventory</button>
+          <button class="topnav-item" data-view="settings" type="button">Settings</button>
+        </nav>
+        <div class="topbar-actions">
+          <button class="sync-chip wait" id="syncStatusBtn" type="button" style="display:none">Connecting…</button>
+          <button class="ghost-button" id="exportJsonBtn" type="button">Export</button>
+          <label class="ghost-button" for="importJsonInput">Import</label>
+          <input id="importJsonInput" class="hidden" type="file" accept="application/json" />
+        </div>
+      </header>
+
+      <main class="main" id="main">
+        <section class="view active" id="roomsView"></section>
+        <section class="view" id="roomView"></section>
+        <section class="view" id="batchesView"></section>
+        <section class="view" id="plantsView"></section>
+        <section class="view" id="tasksView"></section>
+        <section class="view" id="harvestView"></section>
+        <section class="view" id="diagnoseView"></section>
+        <section class="view" id="inventoryView"></section>
+        <section class="view" id="settingsView"></section>
+      </main>
+    </div>
+
+    <div id="modalRoot"></div>
+    <div class="toast" id="toast" role="status" aria-live="polite"></div>
+
+  <script src="js/config.js?v=59"></script>
+  <script src="js/utils.js?v=59"></script>
+  <script src="js/glossary.js?v=54"></script>
+  <script src="js/store.js?v=59"></script>
+  <script src="js/alerts.js?v=60"></script>
+  <script src="js/playbook.js?v=47"></script>
+  <script src="js/diagnose.js?v=45"></script>
+  <script src="js/render.js?v=61"></script>
+  <script src="js/main.js?v=60"></script>
+  <script src="app.js?v=45"></script>
+  </body>
+</html>

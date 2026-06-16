@@ -1,0 +1,7 @@
+name = "grow-room"
+compatibility_date = "2026-06-01"
+pages_build_output_dir = "deploy"
+
+[[kv_namespaces]]
+binding = "GROW_KV"
+id = "c518b6ad60274376953da97181723e20"
