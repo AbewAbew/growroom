@@ -2447,12 +2447,7 @@ function createRenderer(stateRef) {
           <div class="form-row"><span class="form-hint">Intake temp + LED watts size the fan for heat removal; the filter and ducting add resistance the target speed compensates for. Enclosure walls set how fast heat leaks out, which drives the temperature prediction.</span></div>
           <div class="form-row"><label>Warm lights<input name="warmLightCount" type="number" value="${v("warmLightCount", "0")}" /></label><label>Warm Kelvin<input name="warmLightKelvin" type="number" value="${v("warmLightKelvin", "3000")}" /></label></div>
           <div class="form-row"><label>Cool lights<input name="coolLightCount" type="number" value="${v("coolLightCount", "0")}" /></label><label>Cool Kelvin<input name="coolLightKelvin" type="number" value="${v("coolLightKelvin", "5000")}" /></label></div>
-          ${(() => {
-            const fx = window.AppAlerts.lightFixtures(room || {});
-            if (!fx.length) return '<div class="form-row"><span class="form-hint">Set the warm/cool counts and save, then reopen to give each fixture its own wattage (to mix e.g. a 50 W and a 100 W light).</span></div>';
-            return `<div class="form-row"><span class="form-hint">Per-light wattage — mix different lights freely. Each box is one fixture; blank uses the default above.</span></div>
-          <div class="light-watts-grid">${fx.map((f, i) => `<label class="light-watt-cell">Light ${i + 1} <small>(${f.type})</small><input name="lightWatts.${i}" type="number" step="any" value="${escapeHtml(Number.isFinite(f.watts) && f.watts ? f.watts : "")}" placeholder="${escapeHtml(v("lightWattsEach") || "100")}" /></label>`).join("")}</div>`;
-          })()}
+          <div id="lightWattsWrap">${lightWattsGridInner(room?.warmLightCount, room?.coolLightCount, room?.lightWatts, room?.lightWattsEach)}</div>
           <div class="form-row"><span class="form-hint">Measured pot width/height draws the buckets at exact scale (volume alone estimates bucket-shaped dims). Plant size comes from the height you log in Plant health. The lamp isn't set here — it auto-follows the stage's PPFD target in the room view (drag it to override).</span></div>
           <div class="modal-actions">
             ${room?.id ? `<button class="ghost-button danger" data-delete-room="${room.id}" type="button">Delete room</button>` : ""}
@@ -2466,7 +2461,29 @@ function createRenderer(stateRef) {
   return { dom, render, names, measurements };
 }
 
-window.AppRender = { createRenderer };
+// Per-fixture wattage grid for the room form. Standalone/pure so it can be
+// re-rendered live (from main.js) the moment the warm/cool counts change — no
+// save-and-reopen needed, and it works in Add room and Edit room alike.
+function lightWattsGridInner(warm, cool, wattsArr, defaultW) {
+  const w = Math.max(0, Math.round(Number(warm) || 0));
+  const c = Math.max(0, Math.round(Number(cool) || 0));
+  const total = w + c;
+  if (total <= 0) {
+    return '<div class="form-row"><span class="form-hint">Enter a Warm and/or Cool light count above — a wattage box for each fixture appears here so you can mix different lights (e.g. a 50 W and a 100 W).</span></div>';
+  }
+  const arr = Array.isArray(wattsArr) ? wattsArr : [];
+  const ph = escapeHtml(defaultW || "100");
+  let cells = "";
+  for (let i = 0; i < total; i += 1) {
+    const type = i < w ? "warm" : "cool";
+    const raw = arr[i];
+    const val = raw != null && raw !== "" ? escapeHtml(raw) : "";
+    cells += `<label class="light-watt-cell">Light ${i + 1} <small>(${type})</small><input name="lightWatts.${i}" type="number" step="any" value="${val}" placeholder="${ph}" /></label>`;
+  }
+  return `<div class="form-row"><span class="form-hint">Per-light wattage — mix different lights freely. Each box is one fixture; blank uses the default above.</span></div><div class="light-watts-grid">${cells}</div>`;
+}
+
+window.AppRender = { createRenderer, lightWattsGridInner };
 })();
 
 function bindDom() {

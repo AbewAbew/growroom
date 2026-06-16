@@ -346,6 +346,22 @@ function openRoom(roomId) {
   ui.render();
 }
 
+// Rebuilds the per-light wattage boxes in the room form from the current
+// warm/cool counts, preserving any wattages already typed.
+function rebuildLightWattsGrid(form) {
+  if (!form) return;
+  const wrap = form.querySelector("#lightWattsWrap");
+  if (!wrap) return;
+  const warm = form.elements.warmLightCount ? form.elements.warmLightCount.value : 0;
+  const cool = form.elements.coolLightCount ? form.elements.coolLightCount.value : 0;
+  const defaultW = form.elements.lightWattsEach ? form.elements.lightWattsEach.value : "";
+  const existing = [];
+  form.querySelectorAll('[name^="lightWatts."]').forEach((inp) => {
+    existing[Number(inp.name.split(".")[1])] = inp.value;
+  });
+  wrap.innerHTML = window.AppRender.lightWattsGridInner(warm, cool, existing, defaultW);
+}
+
 function updateFanReadouts(room) {
   const setpoint = stateRef.state.settings.setpoints[normalizeStage(room.stage)];
   const profile = window.AppAlerts.equipmentProfile(room, setpoint);
@@ -788,6 +804,10 @@ function attachEvents() {
         updateFanReadouts(room);
       }
     }
+    // Typing a warm/cool light count rebuilds the per-light wattage boxes live
+    // (in both Add room and Edit room) — no save-and-reopen needed.
+    const countField = event.target.closest('#roomEditForm [name="warmLightCount"], #roomEditForm [name="coolLightCount"]');
+    if (countField) rebuildLightWattsGrid(countField.closest("form"));
   });
 
   document.body.addEventListener("change", (event) => {
